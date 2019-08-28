@@ -9,17 +9,17 @@ module ADCME
     UPDATE_OPS
     
     using PyCall
+    using Random
 
     tf = PyNULL()
-    tfp = PyNULL()
-    # tfp = PyNULL()
+    tfops = PyNULL()
     gradients_impl = PyNULL()
     DTYPE = Dict{Type, PyObject}()
     global AUTO_REUSE, GLOBAL_VARIABLES, TRAINABLE_VARIABLES, UPDATE_OPS
     function __init__()
         global AUTO_REUSE, GLOBAL_VARIABLES, TRAINABLE_VARIABLES, UPDATE_OPS
         copy!(tf, pyimport("tensorflow"))
-        copy!(tfp, pyimport("tensorflow_probability"))
+        copy!(tfops, pyimport("tensorflow.python.framework.ops"))
         copy!(gradients_impl, pyimport("tensorflow.python.ops.gradients_impl"))
         copy!(DTYPE, Dict(Float64=>tf.float64,
             Float32=>tf.float32,
@@ -33,10 +33,6 @@ module ADCME
         TRAINABLE_VARIABLES = tf.compat.v1.GraphKeys.TRAINABLE_VARIABLES
         UPDATE_OPS = tf.compat.v1.GraphKeys.UPDATE_OPS
     end
-    
-    # const tf = pyimport("tensorflow")
-    # const tfp = pyimport("tensorflow_probability")
-    # const gradients_impl = pyimport("tensorflow.python.ops.gradients_impl")
 
     include("core.jl")
     include("io.jl")
