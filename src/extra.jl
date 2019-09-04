@@ -8,6 +8,7 @@ wgan,
 rklgan,
 lsgan,
 test_customop,
+load_op_and_grad,
 load_op
 
 
@@ -33,7 +34,8 @@ function customop(torch=false; julia=false)
         @info "Edit custom_op.txt for custom operators"
         return
     else
-        run(`python $(py_dir)/customop.py custom_op.txt $py_dir $(torch ? "" : "# ")`)
+        python = PyCall.python
+        run(`$python $(py_dir)/customop.py custom_op.txt $py_dir $(torch ? "" : "# ")`)
         @info "Custom operator wrapper generated; Torch is $(torch ? "enabled" : "disabled")"
     end
 
@@ -228,6 +230,7 @@ function load_op(oplibpath::String, opname::String; grad=false)
         oplibpath = oplibpath * (Sys.islinux() ? 
                         ".so" : Sys.isapple() ? ".dylib" : ".dll")
     end
+try
 py"""
 import tensorflow as tf
 libop = tf.load_op_library($oplibpath)
@@ -241,4 +244,32 @@ libop = tf.load_op_library($oplibpath)
     else
         return s
     end
+catch e
+    @warn("Library $oplibpath was not loaded:\n$e")
+end
+end
+
+function load_op_and_grad(oplibpath::String, opname::String)
+    if splitext(oplibpath)[2]==""
+        oplibpath = oplibpath * (Sys.islinux() ? 
+                        ".so" : Sys.isapple() ? ".dylib" : ".dll")
+    end
+    opname_grad = opname*"_grad"
+try
+py"""
+import tensorflow as tf
+lib = tf.load_op_library($oplibpath)
+@tf.custom_gradient
+def sparse_solver(*args):
+    u = lib.__getattribute__($opname)(*args)
+    def grad(dy):
+        return lib.__getattribute__($opname_grad)(dy, u, *args)
+    return u, grad
+"""
+    s = py"sparse_solver"
+    println("Load library: $oplibpath")
+    return s
+catch e
+    @warn("Library $oplibpath was not loaded:\n$e")
+end
 end
