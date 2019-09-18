@@ -105,8 +105,8 @@ end
 
 function ae_to_code(file::String, scope::String)
     d = matread(file)
-    println("aedict$scope = matread(\"$file\"); # using MAT")
-    ae_to_code(d, scope)
+    s = "aedict$scope = matread(\"$file\");"*ae_to_code(d, scope)
+    return s
 end
 
 # tensorflow layers from contrib 
@@ -177,9 +177,10 @@ control_dependencies(update_ops) do
     global train_step = AdamOptimizer().minimize(loss)
 end
 """ maxlog=1
+    kwargs = Dict{Any, Any}(kwargs)
     if :is_training in keys(kwargs)
         kwargs[:training] = kwargs[:is_training]
-        delete!(kwargs, :training)
+        delete!(kwargs, :is_training)
     end
     if :scope in keys(kwargs)
         kwargs[:name] = kwargs[:scope]

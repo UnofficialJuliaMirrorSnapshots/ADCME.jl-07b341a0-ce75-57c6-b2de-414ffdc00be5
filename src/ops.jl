@@ -1,7 +1,7 @@
 import Base:*, broadcast, reshape, exp, log, tanh, sum, 
     adjoint, inv, argmax, argmin, ^, max, maximum, min, minimum,
     vec, \, cos, sin, sign, map, prod
-import LinearAlgebra: diag, det, norm, diagm, dot
+import LinearAlgebra: diag, det, norm, diagm, dot, I 
 import Statistics: mean
 import FFTW: fft, ifft
 export 
@@ -55,11 +55,12 @@ mean,
 pad,
 leaky_relu,
 fft, 
-ifft
+ifft,
+I
 
 
 
-function Base.:*(o1::PyObject, o2::PyObject)
+function PyCall.:*(o1::PyObject, o2::PyObject)
     s1 = size(o1)
     s2 = size(o2)
     if s1==nothing || s2==nothing
@@ -147,6 +148,10 @@ function reshape(o::PyObject, m::Integer, n::Integer; kwargs...)
     tf.reshape(o, [m, n]; kwargs...)
 end
 
+reshape(o::PyObject, ::Colon, n::Integer) = reshape(o, -1, n)
+reshape(o::PyObject, n::Integer, ::Colon) = reshape(o, n, -1)
+
+
 function _tfreshape(o::PyObject, s...; kwargs...)
     if length(size(o))==2
         return tf.reshape(o', [s...]; kwargs...)
@@ -222,7 +227,7 @@ function softplus(x;kwargs...)
 end
 
 function log(o::PyObject; kwargs...)
-    tf.log(o; kwargs...)
+    tf.math.log(o; kwargs...)
 end
 
 function exp(o::PyObject; kwargs...)
@@ -586,3 +591,32 @@ dot(x::PyObject, y::PyObject) = sum(x.*y)
 dot(x::PyObject, y::AbstractArray{<:Real}) = sum(x.*constant(y))
 dot(x::AbstractArray{<:Real}, y::PyObject) = sum(constant(x).*y)
 
+import PyCall: +, -
+function +(o::PyObject, I::UniformScaling{Bool})
+    @assert size(o,1)==size(o,2)
+    o + diagm(0=>ones(size(o,1)))
+end
+
+function -(o::PyObject, I::UniformScaling{Bool})
+    @assert size(o,1)==size(o,2)
+    o - diagm(0=>ones(size(o,1)))
+end
+
+Base.:+(I::UniformScaling{Bool}, o::PyObject) = o+I
+Base.:-(I::UniformScaling{Bool}, o::PyObject) = -(o-I)
+
+function Base.:findall(o::PyObject)
+    if !(length(size(o)) in [1,2])
+        error("ADCME: input tensor must have rank 1 or 2")
+    end
+    if !(eltype(o) <: Bool)
+        error("ADCME: input tensor must have boolean types")
+    end
+    if length(size(o))==2
+        tf.compat.v2.where(o) + 1
+    else
+        o = reshape(o, :, 1)
+        res = findall(o)
+        res'[1,:]
+    end
+end 

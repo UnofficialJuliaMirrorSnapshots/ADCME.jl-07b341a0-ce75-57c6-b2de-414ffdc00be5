@@ -2,11 +2,6 @@ using Random
 export customop,
 torchexample,
 xavier_init,
-gan,
-klgan,
-wgan,
-rklgan,
-lsgan,
 load_op_and_grad,
 load_op
 
@@ -22,83 +17,6 @@ function xavier_init(size, dtype=Float64)
     return randn(dtype, size...)*xavier_stddev
 end
 
-"""
-D_loss, G_loss = klgan(P::PyObject, Q::PyObject, discriminator::Function)
-
-return discriminator loss and generator loss for KL divergence
-`P` is the real distribution, `Q` is the generated distribution, 
-`discriminator` is a critic function that outputs values in (0,1) (e.g. the last activation function is sigmoid)
-"""
-function klgan(P::PyObject, Q::PyObject, discriminator::Function)
-    D_real = discriminator(P)
-    D_fake = discriminator(Q)
-    D_loss = -mean(log(D_real) + log(1-D_fake))
-    G_loss = mean(log((1-D_fake)/D_fake))
-    D_loss, G_loss
-end
-
-"""
-D_loss, G_loss = gan(P::PyObject, Q::PyObject, discriminator::Function)
-
-return discriminator loss and generator loss for JS divergence
-`P` is the real distribution, `Q` is the generated distribution, 
-`discriminator` is a critic function that outputs values in (0,1) (e.g. the last activation function is sigmoid)
-"""
-function gan(P::PyObject, Q::PyObject, discriminator::Function)
-    D_real = discriminator(P)
-    D_fake = discriminator(Q)
-    D_loss = -mean(log(D_real) + log(1-D_fake))
-    G_loss = -mean(log(D_fake))
-    D_loss, G_loss
-end
-
-"""
-D_loss, G_loss = wgan(P::PyObject, Q::PyObject, discriminator::Function)
-
-return discriminator loss and generator loss for 1 Wasserstein
-`P` is the real distribution, `Q` is the generated distribution, 
-No constraint is imposed on discriminator
-`clamp` is required for the discriminator weights
-"""
-function wgan(P::PyObject, Q::PyObject, discriminator::Function)
-    D_real = discriminator(P)
-    D_fake = discriminator(Q)
-    D_loss = mean(D_fake)-mean(D_real)
-    G_loss = -mean(D_fake)
-    D_loss, G_loss
-end
-
-"""
-D_loss, G_loss = rklgan(P::PyObject, Q::PyObject, discriminator::Function)
-
-return discriminator loss and generator loss for reverse KL divergence
-`P` is the real distribution, `Q` is the generated distribution, 
-`discriminator` is a critic function that outputs values in (0,1) (e.g. the last activation function is sigmoid)
-"""
-function rklgan(P::PyObject, Q::PyObject, discriminator::Function)
-    D_real = discriminator(P)
-    D_fake = discriminator(Q)
-    G_loss = mean(log((1-D_fake)/D_fake))
-    D_loss = -mean(log(D_fake)+log(1-D_real))
-    D_loss, G_loss
-end
-
-
-"""
-D_loss, G_loss = lsgan(P::PyObject, Q::PyObject, discriminator::Function)
-
-return discriminator loss and generator loss for least square
-`P` is the real distribution, `Q` is the generated distribution, 
-`discriminator` is a critic function that outputs values in (0,1) (e.g. the last activation function is sigmoid)
-1 for real, 0 for fake
-"""
-function lsgan(P::PyObject, Q::PyObject, discriminator::Function)
-    D_real = discriminator(P)
-    D_fake = discriminator(Q)
-    D_loss = mean((D_real-1)^2+D_fake^2)
-    G_loss = mean((D_fake-1)^2)
-    D_loss, G_loss
-end
 
 export traintestdev
 function traintestdev(n::Int64, train::Float64=0.64, test::Float64=0.2)
@@ -231,52 +149,53 @@ function compile(s::String)
 end
 
 function install_custom_op_dependency()
-    if isdir("$(@__DIR__)/../deps/Libraries")
+    LIBDIR = "$(@__DIR__)/../deps/Libraries"
+    if isdir(LIBDIR)
         return
     end
 
     # Install Eigen3 library
-    if !isdir("$(@__DIR__)/../deps/Libraries")
+    if !isdir(LIBDIR)
         @info "Your are running `customop` for the first time; installing dependencies..."
-        mkdir("$(@__DIR__)/../deps/Libraries")
+        mkdir(LIBDIR)
     end
 
-    if !isfile("$(@__DIR__)/../deps/Libraries/eigen.zip")
-        download("http://bitbucket.org/eigen/eigen/get/3.3.7.zip","$(@__DIR__)/Libraries/eigen.zip")
+    if !isfile("$LIBDIR/eigen.zip")
+        download("http://bitbucket.org/eigen/eigen/get/3.3.7.zip","$LIBDIR/eigen.zip")
     end
 
-    if !isdir("$(@__DIR__)/../deps/Libraries/eigen3")    
-        run(`unzip $(@__DIR__)/../deps/Libraries/eigen.zip`)
-        run(`mv $(@__DIR__)/../deps/eigen-eigen-323c052e1731 $(@__DIR__)/../deps/Libraries/eigen3`)
+    if !isdir("$LIBDIR/eigen3")    
+        run(`unzip $LIBDIR/eigen.zip`)
+        run(`mv eigen-eigen-323c052e1731 $LIBDIR/eigen3`)
     end
 
     # Install Torch library
     if Sys.isapple()
-        if !isfile("$(@__DIR__)/../deps/Libraries/libtorch.zip")
-            download("https://download.pytorch.org/libtorch/cpu/libtorch-macos-latest.zip","$(@__DIR__)/Libraries/libtorch.zip")
+        if !isfile("$LIBDIR/libtorch.zip")
+            download("https://download.pytorch.org/libtorch/cpu/libtorch-macos-latest.zip","$LIBDIR/libtorch.zip")
         end
-        if !isdir("$(@__DIR__)/../deps/Libraries/libtorch")
-            run(`unzip $(@__DIR__)/../deps/Libraries/libtorch.zip`)
-            run(`mv $(@__DIR__)/../deps/libtorch $(@__DIR__)/../deps/Libraries/libtorch`)
-            download("https://github.com/intel/mkl-dnn/releases/download/v0.19/mklml_mac_2019.0.5.20190502.tgz","$(@__DIR__)/Libraries/mklml_mac_2019.0.5.20190502.tgz")
-            run(`tar -xvzf $(@__DIR__)/../deps/Libraries/mklml_mac_2019.0.5.20190502.tgz`)
-            run(`mv $(@__DIR__)/../deps/mklml_mac_2019.0.5.20190502/lib/libiomp5.dylib $(@__DIR__)/../deps/Libraries/libtorch/lib/`)
-            run(`mv $(@__DIR__)/../deps/mklml_mac_2019.0.5.20190502/lib/libmklml.dylib $(@__DIR__)/../deps/Libraries/libtorch/lib/`)
-            run(`rm -rf $(@__DIR__)/../deps/mklml_mac_2019.0.5.20190502/`)
+        if !isdir("$LIBDIR/libtorch")
+            run(`unzip $LIBDIR/libtorch.zip`)
+            run(`mv libtorch $LIBDIR/libtorch`)
+            download("https://github.com/intel/mkl-dnn/releases/download/v0.19/mklml_mac_2019.0.5.20190502.tgz","$LIBDIR/mklml_mac_2019.0.5.20190502.tgz")
+            run(`tar -xvzf $LIBDIR/mklml_mac_2019.0.5.20190502.tgz`)
+            run(`mv mklml_mac_2019.0.5.20190502/lib/libiomp5.dylib $LIBDIR/libtorch/lib/`)
+            run(`mv mklml_mac_2019.0.5.20190502/lib/libmklml.dylib $LIBDIR/libtorch/lib/`)
+            run(`rm -rf mklml_mac_2019.0.5.20190502/`)
         end
     elseif Sys.islinux()
-        if !isfile("$(@__DIR__)/../deps/Libraries/libtorch.zip")
-            download("https://download.pytorch.org/libtorch/cpu/libtorch-shared-with-deps-latest.zip","$(@__DIR__)/../deps/Libraries/libtorch.zip")
+        if !isfile("$LIBDIR/libtorch.zip")
+            download("https://download.pytorch.org/libtorch/cpu/libtorch-shared-with-deps-latest.zip","$LIBDIR/libtorch.zip")
         end
-        if !isdir("$(@__DIR__)/../deps/Libraries/libtorch")
-            run(`unzip $(@__DIR__)/../deps/Libraries/libtorch.zip`)
-            run(`mv $(@__DIR__)/../deps/libtorch $(@__DIR__)/../deps/Libraries/libtorch`)
-            download("https://github.com/intel/mkl-dnn/releases/download/v0.19/mklml_lnx_2019.0.5.20190502.tgz","$(@__DIR__)/../deps/Libraries/mklml_lnx_2019.0.5.20190502.tgz")
-            run(`tar -xvzf $(@__DIR__)/../deps/Libraries/mklml_lnx_2019.0.5.20190502.tgz`)
-            run(`mv $(@__DIR__)/../deps/mklml_lnx_2019.0.5.20190502/lib/libiomp5.so $(@__DIR__)/../deps/Libraries/libtorch/lib/`)
-            run(`mv $(@__DIR__)/../deps/mklml_lnx_2019.0.5.20190502/lib/libmklml_gnu.so $(@__DIR__)/../deps/Libraries/libtorch/lib/`)
-            run(`mv $(@__DIR__)/../deps/mklml_lnx_2019.0.5.20190502/lib/libmklml_intel.so $(@__DIR__)/../deps/Libraries/libtorch/lib/`)
-            run(`rm -rf $(@__DIR__)/../deps/mklml_lnx_2019.0.5.20190502/`)
+        if !isdir("$LIBDIR/libtorch")
+            run(`unzip $LIBDIR/libtorch.zip`)
+            run(`mv libtorch $LIBDIR/libtorch`)
+            download("https://github.com/intel/mkl-dnn/releases/download/v0.19/mklml_lnx_2019.0.5.20190502.tgz","$LIBDIR/mklml_lnx_2019.0.5.20190502.tgz")
+            run(`tar -xvzf $LIBDIR/mklml_lnx_2019.0.5.20190502.tgz`)
+            run(`mv mklml_lnx_2019.0.5.20190502/lib/libiomp5.so $LIBDIR/libtorch/lib/`)
+            run(`mv mklml_lnx_2019.0.5.20190502/lib/libmklml_gnu.so $LIBDIR/libtorch/lib/`)
+            run(`mv mklml_lnx_2019.0.5.20190502/lib/libmklml_intel.so $LIBDIR/libtorch/lib/`)
+            run(`rm -rf mklml_lnx_2019.0.5.20190502/`)
         end
     end
 end
