@@ -4,7 +4,7 @@ project(TFApp)
 ##  For PyTorch
 # execute_process(COMMAND julia -e "abspath(joinpath(Base.find_package(\"ADCME\"), \"../../deps/Libraries/libtorch\"))|>print" OUTPUT_VARIABLE PREFIX)
 # execute_process(COMMAND julia -e "abspath(joinpath(Base.find_package(\"ADCME\"), \"../../examples/custom_op/headers\"))|>print" OUTPUT_VARIABLE HEADERS)
-# execute_process(COMMAND julia -e "abspath(joinpath(Base.find_package(\"ADCME\"), \"../../deps/Libraries\"))|>print" OUTPUT_VARIABLE EIGEN_INC)
+execute_process(COMMAND julia -e "abspath(joinpath(Base.find_package(\"ADCME\"), \"../../deps/Libraries\"))|>print" OUTPUT_VARIABLE EIGEN_INC)
 # execute_process(COMMAND julia -e "abspath(joinpath(Base.find_package(\"ADCME\"), \"../../deps/Libraries/libtorch/include\"))|>print" OUTPUT_VARIABLE TORCH_INC)
 # set(CMAKE_PREFIX_PATH ${PREFIX})
 # find_package(Torch REQUIRED)
@@ -26,12 +26,14 @@ if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 5.0 OR CMAKE_CXX_COMPILER_VERSION
   set(CMAKE_CXX_FLAGS "-D_GLIBCXX_USE_CXX11_ABI=${TF_ABI} ${CMAKE_CXX_FLAGS}")
 endif()
 
-set(CMAKE_BUILD_TYPE Release)
-set(CMAKE_CXX_FLAGS_RELEASE "-march=native -O3 -DNDEBUG")
-
 include_directories(${TF_INC} ${HEADERS} ${EIGEN_INC} ${TORCH_INC})
 link_directories(${TF_LIB})
 
-add_library(SparseLeastSquare SHARED SparseLeastSquare.cpp)
-set_property(TARGET SparseLeastSquare PROPERTY POSITION_INDEPENDENT_CODE ON)
-target_link_libraries(SparseLeastSquare ${TF_LIB_FILE} "${TORCH_LIBRARIES}")
+
+set(CMAKE_BUILD_TYPE Release)
+set(CMAKE_CXX_FLAGS_RELEASE "-march=native -O3 -DNDEBUG")
+
+
+add_library(SparseMatMul SHARED SparseMatMul.cpp)
+set_property(TARGET SparseMatMul PROPERTY POSITION_INDEPENDENT_CODE ON)
+target_link_libraries(SparseMatMul ${TF_LIB_FILE} "${TORCH_LIBRARIES}")

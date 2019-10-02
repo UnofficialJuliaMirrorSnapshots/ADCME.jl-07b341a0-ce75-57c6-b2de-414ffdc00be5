@@ -6,3 +6,5 @@ LinearAlgebra
 Statistics
 SparseArrays
 Random
+Suppressor
+PyPlot

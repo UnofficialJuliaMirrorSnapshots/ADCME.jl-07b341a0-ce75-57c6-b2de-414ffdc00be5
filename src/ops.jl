@@ -23,7 +23,6 @@ diag,
 diagm,
 det,
 inv,
-solve,
 triangular_solve,
 argmin,
 argmax,
@@ -57,7 +56,8 @@ leaky_relu,
 fft, 
 ifft,
 I,
-svd
+svd,
+vector
 
 
 
@@ -91,40 +91,40 @@ function PyCall.:*(o1::PyObject, o2::PyObject)
     end
 end
 
-Base.:*(o1::PyObject, o2::AbstractArray) = *(o1, constant(Array(o2), dtype=get_dtype(o1)))
-Base.:*(o1::AbstractArray, o2::PyObject) = *(constant(Array(o1), dtype=get_dtype(o2)), o2)
+Base.:*(o1::PyObject, o2::AbstractArray{<:Real}) = *(o1, constant(Array(o2), dtype=get_dtype(o1)))
+Base.:*(o1::AbstractArray{<:Real}, o2::PyObject) = *(constant(Array(o1), dtype=get_dtype(o2)), o2)
 Base.:*(o1::Number, o2::PyObject) = *(constant(o1, dtype=get_dtype(o2)), o2)
 Base.:*(o1::PyObject, o2::Number) = *(o1, constant(o2, dtype=get_dtype(o1)))
 
-Base.Broadcast.broadcasted(::typeof(*), o1::PyObject, o2::AbstractArray) = tf.multiply(o1, Array(o2))
-Base.Broadcast.broadcasted(::typeof(*), o1::AbstractArray, o2::PyObject) = tf.multiply(Array(o1), o2)
+Base.Broadcast.broadcasted(::typeof(*), o1::PyObject, o2::AbstractArray{<:Real}) = tf.multiply(o1, Array(o2))
+Base.Broadcast.broadcasted(::typeof(*), o1::AbstractArray{<:Real}, o2::PyObject) = tf.multiply(Array(o1), o2)
 Base.Broadcast.broadcasted(::typeof(*), o1::PyObject, o2::PyObject) = tf.multiply(o1, o2)
 Base.Broadcast.broadcasted(::typeof(*), o1::PyObject, o2::Number) = tf.multiply(o1, o2)
 Base.Broadcast.broadcasted(::typeof(*), o1::Number, o2::PyObject) = tf.multiply(o1, o2)
 
-Base.Broadcast.broadcasted(::typeof(/), o1::PyObject, o2::AbstractArray) = tf.divide(o1, Array(o2))
-Base.Broadcast.broadcasted(::typeof(/), o1::AbstractArray, o2::PyObject) = tf.divide(Array(o1), o2)
+Base.Broadcast.broadcasted(::typeof(/), o1::PyObject, o2::AbstractArray{<:Real}) = tf.divide(o1, Array(o2))
+Base.Broadcast.broadcasted(::typeof(/), o1::AbstractArray{<:Real}, o2::PyObject) = tf.divide(Array(o1), o2)
 Base.Broadcast.broadcasted(::typeof(/), o1::PyObject, o2::PyObject) = tf.divide(o1, o2)
 Base.Broadcast.broadcasted(::typeof(/), o1::PyObject, o2::Number) = tf.divide(o1, o2)
 Base.Broadcast.broadcasted(::typeof(/), o1::Number, o2::PyObject) = tf.divide(o1, o2)
 
-Base.Broadcast.broadcasted(::typeof(+), o1::PyObject, o2::AbstractArray) = o1 + Array(o2)
-Base.Broadcast.broadcasted(::typeof(+), o1::AbstractArray, o2::PyObject) = Array(o1) + o2
+Base.Broadcast.broadcasted(::typeof(+), o1::PyObject, o2::AbstractArray{<:Real}) = o1 + Array(o2)
+Base.Broadcast.broadcasted(::typeof(+), o1::AbstractArray{<:Real}, o2::PyObject) = Array(o1) + o2
 Base.Broadcast.broadcasted(::typeof(+), o1::PyObject, o2::PyObject) = o1 + o2
 Base.Broadcast.broadcasted(::typeof(+), o1::PyObject, o2::Number) = o1 + o2
 Base.Broadcast.broadcasted(::typeof(+), o1::Number, o2::PyObject) = o1 + o2
 
-Base.Broadcast.broadcasted(::typeof(-), o1::PyObject, o2::AbstractArray) = o1 - Array(o2)
-Base.Broadcast.broadcasted(::typeof(-), o1::AbstractArray, o2::PyObject) = Array(o1) - o2
+Base.Broadcast.broadcasted(::typeof(-), o1::PyObject, o2::AbstractArray{<:Real}) = o1 - Array(o2)
+Base.Broadcast.broadcasted(::typeof(-), o1::AbstractArray{<:Real}, o2::PyObject) = Array(o1) - o2
 Base.Broadcast.broadcasted(::typeof(-), o1::PyObject, o2::PyObject) = o1 - o2
 Base.Broadcast.broadcasted(::typeof(-), o1::PyObject, o2::Number) = o1 - o2
 Base.Broadcast.broadcasted(::typeof(-), o1::Number, o2::PyObject) = o1 - o2
 
 
 warn_broadcast_pow() = error(".^ is disabled due to eager evaluation. Use ^ instead.")
-Base.Broadcast.broadcasted(::typeof(^), o1::PyObject, o2::Union{AbstractArray,Number}) = warn_broadcast_pow()
+Base.Broadcast.broadcasted(::typeof(^), o1::PyObject, o2::Union{AbstractArray{<:Real},Number}) = warn_broadcast_pow()
 Base.Broadcast.broadcasted(::typeof(^), o1::PyObject, o2::PyObject) = warn_broadcast_pow()
-Base.Broadcast.broadcasted(::typeof(^), o1::Union{AbstractArray,Number}, o2::PyObject) = warn_broadcast_pow()
+Base.Broadcast.broadcasted(::typeof(^), o1::Union{AbstractArray{<:Real},Number}, o2::PyObject) = warn_broadcast_pow()
 
 function einsum(equation, args...; kwargs...)
     tf.einsum(equation, args...; kwargs...)
@@ -358,7 +358,12 @@ function solve(matrix, rhs; kwargs...)
         flag = true
         rhs = reshape(rhs, size(rhs, 1), 1)
     end
-    ret = tf.linalg.solve(matrix, rhs; kwargs...)
+    if size(matrix,1)==size(matrix,2)
+        ret = tf.linalg.solve(matrix, rhs; kwargs...)
+    else
+        # @show matrix, rhs
+        ret = tf.linalg.lstsq(matrix, rhs;kwargs...)
+    end
     if flag
         ret = squeeze(ret, dims=2)
     end
@@ -603,8 +608,8 @@ function map(fn::Function, o::PyObject; kwargs...)
 end
 
 dot(x::PyObject, y::PyObject) = sum(x.*y)
-dot(x::PyObject, y::AbstractArray{<:Real}) = sum(x.*constant(y))
-dot(x::AbstractArray{<:Real}, y::PyObject) = sum(constant(x).*y)
+dot(x::PyObject, y::AbstractArray{<:Real}{<:Real}) = sum(x.*constant(y))
+dot(x::AbstractArray{<:Real}{<:Real}, y::PyObject) = sum(constant(x).*y)
 
 import PyCall: +, -
 function +(o::PyObject, I::UniformScaling{Bool})
@@ -635,3 +640,23 @@ function Base.:findall(o::PyObject)
         res'[1,:]
     end
 end 
+
+"""
+    vector(i::Union{Array{T}, PyObject, UnitRange, StepRange}, v::Union{Array{Float64},PyObject},s::Union{Int64,PyObject})
+
+Returns a vector `V` with length `s` such that
+```
+V[i] = v
+```
+"""
+function vector(i::Union{Array{T}, PyObject, UnitRange, StepRange}, v::Union{Array{Float64},PyObject},
+                 s::Union{Int64,PyObject}) where T<:Integer
+    if isa(i, UnitRange) || isa(i, StepRange)
+        i = collect(i)
+    end
+    i = convert_to_tensor(i)
+    s = convert_to_tensor(s)
+    i = reshape(i - 1,:,1)
+    s = reshape(s, 1)
+    tf.scatter_nd(i, v, s)
+end
