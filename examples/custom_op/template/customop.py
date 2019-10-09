@@ -108,8 +108,8 @@ def SetShapeFn():
             s+=SetShapeFn_T2.substitute({"name":item[1], "id":i, "dims":",".join([str(x) for x in item[3]]), "SVM":"Vector"})
         elif item[2]==2:
             s+=SetShapeFn_T2.substitute({"name":item[1], "id":i, "dims":",".join([str(x) for x in item[3]]), "SVM":"Matrix"})
-        elif item[2]==3:
-            s+=SetShapeFn_T2.substitute({"name":item[1], "id":i, "dims":",".join([str(x) for x in item[3]]), "SVM":"Tensor"})
+        elif item[2]>=3:
+            s+=SetShapeFn_T2.substitute({"name":item[1], "id":i, "dims":",".join([str(x) for x in item[3]]), "SVM":"MakeShape"})
     return s
 
 ForwardTensor_T = Template("""
@@ -441,6 +441,12 @@ d = {"operator_name": convert(op),
     "ARGS": ARGS(),
     "OUTPUT": OUTPUT(),
     "FIRST_OUTPUT": outputs[0][1]}
+
+if len(outputs)>1:
+    d["multiple"] = ", multiple=true"
+else:
+    d["multiple"] = ""
+
 with open("{}/gradtest.template".format(dirname),"r") as fp:
     cnt = fp.read()
     s = Template(cnt)

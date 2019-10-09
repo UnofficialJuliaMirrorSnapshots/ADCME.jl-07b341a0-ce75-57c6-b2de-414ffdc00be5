@@ -6,7 +6,8 @@ load_op_and_grad,
 load_op,
 compile_op,
 tic,
-toc
+toc,
+test_custom_op
 
 function torchexample()
     filename = "$(@__DIR__)/../examples/torch/laexample.cpp"
@@ -34,6 +35,13 @@ end
 
 
 ############### custom operators ##################
+function cmake()
+    if Sys.islinux()
+        run(`$CMAKE -DCMAKE_C_COMPILER=$CC -DCMAKE_CXX_COMPILER=$CXX ..`)
+    else
+        run(`$CMAKE ..`)
+    end
+end
 
 load_op_dict = Dict{Tuple{String, String}, PyObject}()
 load_op_grad_dict = Dict{Tuple{String, String}, PyObject}()
@@ -54,8 +62,8 @@ function compile_op(oplibpath::String)
     if !isdir(DIR); mkdir(DIR); end 
     cd(DIR)
     try
-        run(`cmake ..`)
-        run(`make -j`)
+        cmake()
+        run(`$MAKE -j`)
     catch
         @warn("Compiling not successful. Instruction: Check $oplibpath")
     finally
@@ -94,7 +102,7 @@ lib$$fn_name = tf.load_op_library($oplibpath)
     return s
 end
 
-function load_op_and_grad(oplibpath::String, opname::String)
+function load_op_and_grad(oplibpath::String, opname::String; multiple::Bool=false)
     if splitext(oplibpath)[2]==""
         oplibpath = oplibpath * (Sys.islinux() ? 
                         ".so" : Sys.isapple() ? ".dylib" : ".dll")
@@ -109,6 +117,7 @@ function load_op_and_grad(oplibpath::String, opname::String)
     
     opname_grad = opname*"_grad"
     fn_name = opname*randstring(8)
+if !multiple
 py"""
 import tensorflow as tf
 lib$$fn_name = tf.load_op_library($oplibpath)
@@ -119,6 +128,18 @@ def $$fn_name(*args):
         return lib$$fn_name.$$opname_grad(dy, u, *args)
     return u, grad
 """
+else
+py"""
+import tensorflow as tf
+lib$$fn_name = tf.load_op_library($oplibpath)
+@tf.custom_gradient
+def $$fn_name(*args):
+    u = lib$$fn_name.$$opname(*args)
+    def grad(*dy):
+        return lib$$fn_name.$$opname_grad(*dy, *u, *args)
+    return u, grad
+"""
+end
         s = py"$$fn_name"
         load_op_grad_dict[(oplibpath,opname)] = s
         printstyled("Load library operator (with gradient): $oplibpath ==> $opname\n", color=:green)
@@ -176,67 +197,14 @@ function compile(s::String)
     mkdir("build")
     cd("build")
     try
-        cmd = setenv(`cmake ..`, "PATH"=>ENV["PATH"]*":"*splitdir(PyCall.python)[1])
-        run(cmd)
-        cmd = setenv(`make -j`, "PATH"=>ENV["PATH"]*":"*splitdir(PyCall.python)[1])
-        run(cmd) 
+        cmake()
+        run(`$MAKE -j`)
     catch e 
         error("Compilation error: $e")
     finally
         cd(PWD)
     end
 end
-
-function install_custom_op_dependency()
-    LIBDIR = "$(@__DIR__)/../deps/Libraries"
-
-    # Install Eigen3 library
-    if !isdir(LIBDIR)
-        @info "Your are running `customop` for the first time; installing dependencies..."
-        mkdir(LIBDIR)
-    end
-
-    if !isfile("$LIBDIR/eigen.zip")
-        download("http://bitbucket.org/eigen/eigen/get/3.3.7.zip","$LIBDIR/eigen.zip")
-    end
-
-    if !isdir("$LIBDIR/eigen3")    
-        run(`unzip $LIBDIR/eigen.zip`)
-        run(`mv eigen-eigen-323c052e1731 $LIBDIR/eigen3`)
-    end
-
-    # Install Torch library
-    if Sys.isapple()
-        if !isfile("$LIBDIR/libtorch.zip")
-            download("https://download.pytorch.org/libtorch/cpu/libtorch-macos-latest.zip","$LIBDIR/libtorch.zip")
-        end
-        if !isdir("$LIBDIR/libtorch")
-            run(`unzip $LIBDIR/libtorch.zip`)
-            run(`mv libtorch $LIBDIR/libtorch`)
-            download("https://github.com/intel/mkl-dnn/releases/download/v0.19/mklml_mac_2019.0.5.20190502.tgz","$LIBDIR/mklml_mac_2019.0.5.20190502.tgz")
-            run(`tar -xvzf $LIBDIR/mklml_mac_2019.0.5.20190502.tgz`)
-            run(`mv mklml_mac_2019.0.5.20190502/lib/libiomp5.dylib $LIBDIR/libtorch/lib/`)
-            run(`mv mklml_mac_2019.0.5.20190502/lib/libmklml.dylib $LIBDIR/libtorch/lib/`)
-            run(`rm -rf mklml_mac_2019.0.5.20190502/`)
-        end
-    elseif Sys.islinux()
-        if !isfile("$LIBDIR/libtorch.zip")
-            download("https://download.pytorch.org/libtorch/cpu/libtorch-shared-with-deps-latest.zip","$LIBDIR/libtorch.zip")
-        end
-        if !isdir("$LIBDIR/libtorch")
-            run(`unzip $LIBDIR/libtorch.zip`)
-            run(`mv libtorch $LIBDIR/libtorch`)
-            download("https://github.com/intel/mkl-dnn/releases/download/v0.19/mklml_lnx_2019.0.5.20190502.tgz","$LIBDIR/mklml_lnx_2019.0.5.20190502.tgz")
-            run(`tar -xvzf $LIBDIR/mklml_lnx_2019.0.5.20190502.tgz`)
-            run(`mv mklml_lnx_2019.0.5.20190502/lib/libiomp5.so $LIBDIR/libtorch/lib/`)
-            run(`mv mklml_lnx_2019.0.5.20190502/lib/libmklml_gnu.so $LIBDIR/libtorch/lib/`)
-            run(`mv mklml_lnx_2019.0.5.20190502/lib/libmklml_intel.so $LIBDIR/libtorch/lib/`)
-            run(`rm -rf mklml_lnx_2019.0.5.20190502/`)
-        end
-    end
-end
-
-
 
 """
     customop(torch=false; julia=false)
@@ -254,7 +222,7 @@ julia> customop() # after editing `customop.txt`, call it again to generate inte
 The option `torch` adds support for `PyTorch` backend in `CMakeLists.txt`
 """
 function customop(torch=false; julia=false)
-    install_custom_op_dependency()
+    # install_custom_op_dependency()
     py_dir = "$(@__DIR__)/../examples/custom_op/template"
     if !("custom_op.txt" in readdir("."))
         cp("$(py_dir)/custom_op.example", "custom_op.txt")
@@ -286,14 +254,8 @@ link_directories(\${TF_LIB} \${JULIA_LIB})"""
         write("CMakeLists.txt", cmakelist)
 
         gradtest = read("gradtest.jl", String)
-        m = match(r"(\#\#\#\#\#\#\#\#\#\#\#\#\#\#\#\#\#\# Load Operator.*End Load Operator \#\#\#\#\#\#\#\#\#\#\#\#\#\#\#\#\#\#)"s, gradtest)
-        s = m.captures[1]
-        m = match(r"(build/.*?)\.so", s)
-        Dir = m.captures[1]
-        m = match(r"= py\\\"(.*?)\\\"", s)
-        Fun = m.captures[1]
-        s0 = "$Fun = load_op(\"$Dir\", \"$Fun\")"
-        gradtest = replace(gradtest, s=>s0)
+        gradtest = replace(gradtest, "load_op_and_grad"=>"load_op")
+        gradtest = replace(gradtest, ", multiple=true"=>"")
         m = match(r"(\# TODO: change your test parameter to `m`.*)"s, gradtest)
         s = m.captures[1]
         gradtest = replace(gradtest, s=>"")
@@ -341,4 +303,17 @@ function toc(o::PyObject, i::Union{PyObject, Integer}=0)
     end_timer = get_tensor_flow_timer(i)
     o = bind(o, end_timer)
     o, end_timer
+end
+
+function test_custom_op()
+    PWD = pwd()
+    cd("$(@__DIR__)/../deps/CustomOps/SparseSolver")
+    rm("build", recursive=true, force=true)
+    mkdir("build")
+    cd("build")
+    cmake()
+    run(`$MAKE -j`)
+    include("$(@__DIR__)/../deps/CustomOps/SparseSolver/gradtest.jl")
+    cd(PWD)
+    true
 end
