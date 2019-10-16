@@ -6,7 +6,7 @@
     A[4] = Variable(A[1])
     A[5] = Variable(A[2])
     A[6] = Variable(A[3])
-    run(sess, global_variables_initializer())
+    init(sess)
     for i = 1:6
         for j = 1:6
             if i<=3 && j<=3 || (i in [2,5] && j in [1,4]) ||
@@ -74,7 +74,7 @@ end
     D = scatter_add(C, [2], [1], 1., 3, 3)
     G = reshape(D, 3, 3)
     E = [1. 1. 1; 2. 1. 1.; 1. 1. 1.]
-    run(sess, global_variables_initializer())
+    init(sess)
     @test run(sess, A)≈B
     @test run(sess, G)≈E
 
@@ -83,14 +83,14 @@ end
     C = scatter_add(A, [1;4;5;6;7], 2B)
     D = gradients(sum(C), B)
     E = gradients(sum(C), A)
-    run(sess, global_variables_initializer())
+    init(sess)
     @test run(sess, D)≈2ones(5)
     @test run(sess, E)≈ones(10)
 
     A = Variable(ones(10,10))
     B = Variable(ones(3,4))
     C = scatter_add(A, [1;2;3],[3;4;5;6], B)
-    run(sess, global_variables_initializer())
+    init(sess)
     @test run(sess, C)≈[1.0  1.0  2.0  2.0  2.0  2.0  1.0  1.0  1.0  1.0
     1.0  1.0  2.0  2.0  2.0  2.0  1.0  1.0  1.0  1.0
     1.0  1.0  2.0  2.0  2.0  2.0  1.0  1.0  1.0  1.0
@@ -150,7 +150,7 @@ end
     TBc = constant(B)
 
     gop = group_assign([a,b], [2.0,2.0])
-    run(sess, global_variables_initializer())
+    init(sess)
     @test maxA  ≈ run(sess, maxTA)
     @test minA  ≈ run(sess, minTA)
     @test get_dtype(cast(maxTA, Float64))==Float64
@@ -286,4 +286,18 @@ end
     m[2:11] = rand(10)
     v = vector(2:11, m[2:11], 20)
     @test run(sess, v)≈m
+end
+
+@testset "repeat" begin
+    A = constant(2.0)
+    @test run(sess, repeat(A, 2)) ≈ ones(2)*2.0
+    @test run(sess, repeat(A, 1, 2)) ≈ ones(1, 2)*2.0
+    a = rand(2)
+    A = constant(a)
+    @test run(sess, repeat(A, 2)) ≈ repeat(a, 2)
+    @test run(sess, repeat(A, 3, 2)) ≈ repeat(a, 3, 2)
+    a = rand(2, 4)
+    A = constant(a)
+    @test run(sess, repeat(A, 2)) ≈ repeat(a, 2)
+    @test run(sess, repeat(A, 3, 2)) ≈ repeat(a, 3, 2)
 end

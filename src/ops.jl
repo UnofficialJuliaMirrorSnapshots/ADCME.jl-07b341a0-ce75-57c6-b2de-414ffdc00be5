@@ -130,9 +130,7 @@ function einsum(equation, args...; kwargs...)
     tf.einsum(equation, args...; kwargs...)
 end
 
-"""
-`reshape` is designed so that we can think of tensors in column major
-"""
+
 function reshape(o::PyObject, s::Integer; kwargs...)
     if length(size(o))==2
         return tf.reshape(o', [s]; kwargs...)
@@ -285,11 +283,6 @@ assign(o::Array{PyObject}, value::Array, args...;kwargs...) = group_assign(o, va
 
 
 @deprecate group_assign assign
-"""
-group_assign(os::Array{PyObject}, values, args...; kwargs...)
-
-apply `assign` to each element of `os` and `values`
-"""
 function group_assign(os::Array{PyObject}, values, args...; kwargs...)
     ops = Array{PyObject}(undef, length(os))
     for i = 1:length(os)
@@ -659,4 +652,29 @@ function vector(i::Union{Array{T}, PyObject, UnitRange, StepRange}, v::Union{Arr
     i = reshape(i - 1,:,1)
     s = reshape(s, 1)
     tf.scatter_nd(i, v, s)
+end
+
+function Base.:repeat(o::PyObject, i::Int64, j::Int64)
+    if length(size(o))==0
+        return o*ones(eltype(o), i, j)
+    end
+    if length(size(o))==1
+        o = reshape(o, :, 1)
+    end
+    if length(size(o))!=2
+        error("ADCME: size of `o` must be 0, 1, 2")
+    end
+    tf.tile(o, (i,j))
+end
+
+function Base.:repeat(o::PyObject, i::Int64)
+    if length(size(o))==0
+        o * ones(eltype(o),i)
+    elseif length(size(o))==1
+        squeeze(repeat(o, i, 1))
+    elseif length(size(o))==2
+        repeat(o, i, 1)
+    else
+        error("ADCME: rank of `o` must be 0, 1, 2")
+    end
 end
