@@ -1,18 +1,16 @@
 using Random
 export customop,
-torchexample,
 xavier_init,
 load_op_and_grad,
 load_op,
 compile_op,
 test_custom_op
 
-function torchexample()
-    filename = "$(@__DIR__)/../examples/torch/laexample.cpp"
-    s = read(filename, String)
-    println(s)
-end
+"""
+    xavier_init(size, dtype=Float64)
 
+Returns a matrix of size `size` and its values are from Xavier initialization. 
+"""
 function xavier_init(size, dtype=Float64)
     in_dim = size[1]
     xavier_stddev = 1. / sqrt(in_dim / 2.)
@@ -46,15 +44,18 @@ load_op_grad_dict = Dict{Tuple{String, String}, PyObject}()
 
 
 """
-    compile_op(oplibpath::String, opname::String)
+    compile_op(oplibpath::String; check::Bool=false)
 
 Compile the library operator by force.
 """
-function compile_op(oplibpath::String)
+function compile_op(oplibpath::String; check::Bool=false)
     PWD = pwd()
     if splitext(oplibpath)[2]==""
         oplibpath = abspath(oplibpath * (Sys.islinux() ? 
                         ".so" : Sys.isapple() ? ".dylib" : ".dll"))
+    end
+    if check && isfile(oplibpath)
+        return 
     end
     DIR, FILE = splitdir(oplibpath)
     if !isdir(DIR); mkdir(DIR); end 
@@ -70,10 +71,9 @@ function compile_op(oplibpath::String)
 end
 
 @doc """
-load_op(oplibpath::String, opname::String)
+    load_op(oplibpath::String, opname::String)
 
-loads the operator `opname` from library `oplibpath`, 
-if the surfix of `oplibpath` is not given, it will be inferred from system
+Loads the operator `opname` from library `oplibpath`.
 """
 function load_op(oplibpath::String, opname::String)
     if splitext(oplibpath)[2]==""
@@ -100,6 +100,12 @@ lib$$fn_name = tf.load_op_library($oplibpath)
     return s
 end
 
+@doc """
+    load_op_and_grad(oplibpath::String, opname::String; multiple::Bool=false)
+
+Loads the operator `opname` from library `oplibpath`; gradients are also imported. 
+If `multiple` is true, the operator is assumed to have multiple outputs. 
+"""
 function load_op_and_grad(oplibpath::String, opname::String; multiple::Bool=false)
     if splitext(oplibpath)[2]==""
         oplibpath = oplibpath * (Sys.islinux() ? 
@@ -134,6 +140,7 @@ lib$$fn_name = tf.load_op_library($oplibpath)
 def $$fn_name(*args):
     u = lib$$fn_name.$$opname(*args)
     def grad(*dy):
+        dy = [y for y in dy if y is not None]
         return lib$$fn_name.$$opname_grad(*dy, *u, *args)
     return u, grad
 """
@@ -147,7 +154,7 @@ end
 """
     load_system_op(s::String, oplib::String, grad::Bool=true)
 
-Load custom operator from CustomOps directory (shipped with ADCME instead of TensorFlow)
+Loads custom operator from CustomOps directory (shipped with ADCME instead of TensorFlow)
 For example 
 ```
 s = "SparseOperator"
@@ -213,10 +220,8 @@ Create a new custom operator.
 # example
 ```julia-repl
 julia> customop() # create an editable `customop.txt` file
-[ Info: Custom operator wrapper generated; Torch is disabled
-
+[ Info: Edit custom_op.txt for custom operators
 julia> customop() # after editing `customop.txt`, call it again to generate interface files.
-[ Info: Custom operator wrapper generated; Torch is disabled
 ```
 """
 function customop()
@@ -228,7 +233,7 @@ function customop()
         return
     else
         python = PyCall.python
-        run(`$python $(py_dir)/customop.py custom_op.txt $py_dir $(torch ? "" : "# ")`)
+        run(`$python $(py_dir)/customop.py custom_op.txt $py_dir`)
     end
 end
 

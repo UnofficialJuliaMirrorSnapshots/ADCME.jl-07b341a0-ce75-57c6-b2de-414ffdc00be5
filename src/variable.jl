@@ -21,8 +21,14 @@ SPDMatrix,
 tensor,
 convert_to_tensor,
 hessian_vector,
-TensorArray
+TensorArray,
+gradient_checkpointing
 
+"""
+    constant(value; kwargs...)
+
+Constructs a non-trainable tensor from `value`.
+"""
 function constant(value; kwargs...)
     if isa(value, PyObject)
         return value
@@ -34,6 +40,11 @@ function constant(value; kwargs...)
     tf.constant(value; kwargs...)
 end
 
+"""
+    Variable(initial_value;kwargs...)
+
+Constructs a ref tensor from `value`. 
+"""
 function Variable(initial_value;kwargs...)
     kwargs = jlargs(kwargs)
     if !(:dtype in keys(kwargs))
@@ -360,6 +371,9 @@ function SPDMatrix(m::Int64)
 end
 
 
+"""
+    tensor(v::Array{T,2}; dtype=Float64, sparse=false) where T
+"""
 function tensor(v::Array{T,1}; dtype=Float64, sparse=false) where T
     local ret
     N = length(v)
@@ -376,6 +390,19 @@ function tensor(v::Array{T,1}; dtype=Float64, sparse=false) where T
     ret
 end
 
+"""
+    tensor(v::Array{T,2}; dtype=Float64, sparse=false) where T
+    
+Convert a generic array `v` to a tensor. For example, 
+```julia
+v = [0.0 constant(1.0) 2.0
+    constant(2.0) 0.0 1.0]
+u = tensor(v)
+```
+`u` will be a ``2\\times 3`` tensor. 
+!!! note 
+    This function is expensive. Use with caution.
+"""
 function tensor(v::Array{T,2}; dtype=Float64, sparse=false) where T
     local ret
     M, N = size(v)
@@ -394,6 +421,11 @@ function tensor(v::Array{T,2}; dtype=Float64, sparse=false) where T
     ret
 end
 
+"""
+    TensorArray(size_::Int64=0, args...;kwargs...)
+
+Constructs a tensor array for [`while_loop`](@ref).  
+"""
 function TensorArray(size_::Int64=0, args...;kwargs...)
     kwargs = jlargs(kwargs)
     if !(haskey(kwargs, :dtype))
@@ -409,14 +441,30 @@ function TensorArray(size_::Int64=0, args...;kwargs...)
     tf.TensorArray(args...;kwargs...)
 end
 
+""" 
+    read(ta::PyObject, i::Union{PyObject,Integer})
+
+Reads data from [`TensorArray`](@ref) at index `i`.
+"""
 function Base.:read(ta::PyObject, i::Union{PyObject,Integer})
     ta.read(i-1)
 end
 
-function Base.:write(ta::PyObject, i::Union{PyObject,Integer}, obj)
+""" 
+    write(ta::PyObject, i::Union{PyObject,Integer}, obj)
+
+Writes data `obj` to [`TensorArray`](@ref) at index `i`.
+"""
+function Base.:write(ta::PyObject, i::Union{PyObject,Integer}, obj::PyObject)
     ta.write(i-1, obj)
 end
 
+"""
+    convert_to_tensor(o::Union{PyObject, Number, Array{T}, Missing, Nothing}; dtype::Union{Type, Missing}=missing) where T<:Number
+
+Converts the input `o` to tensor. If `o` is already a tensor and `dtype` (if provided) is the same as that of `o`, the operator does nothing.
+Otherwise, `convert_to_tensor` converts the numerical array to a constant tensor or casts the data type.
+"""
 function convert_to_tensor(o::Union{PyObject, Number, Array{T}, Missing, Nothing}; 
     dtype::Union{Type, Missing}=missing) where T<:Number
     if ismissing(o) || isnothing(o)
@@ -435,4 +483,38 @@ function convert_to_tensor(o::Union{PyObject, Number, Array{T}, Missing, Nothing
             return constant(o)
         end
     end
+end
+
+"""
+    gradient_checkpointing(type::String="speed")
+
+Uses checkpointing scheme for gradients. 
+- 'speed':  checkpoint all outputs of convolutions and matmuls. these ops are usually the most expensive,
+    so checkpointing them maximizes the running speed
+    (this is a good option if nonlinearities, concats, batchnorms, etc are taking up a lot of memory)
+- 'memory': try to minimize the memory usage
+    (currently using a very simple strategy that identifies a number of bottleneck tensors in the graph to checkpoint)
+- 'collection': look for a tensorflow collection named 'checkpoints', which holds the tensors to checkpoint
+"""
+function gradient_checkpointing(type::String="speed")
+    pyfile = "$(Conda.LIBDIR)/Libraries/memory_saving_gradients.py"
+    if !isfile(pyfile)
+        @info "Downloading memory_saving_gradients.py..."
+        download("https://raw.githubusercontent.com/cybertronai/gradient-checkpointing/master/memory_saving_gradients.py",
+                pyfile)
+    end
+    py"""exec(open($pyfile).read())"""
+    gradients_speed = py"gradients_speed"
+    gradients_memory = py"gradients_memory"
+    gradients_collection = py"gradients_collection"
+    if type=="speed"
+        tf.__dict__["gradients"] = gradients_speed
+    elseif type=="memory"
+        tf.__dict__["gradients"] = gradients_memory
+    elseif type=="collection"
+        tf.__dict__["gradients"] = gradients_collection
+    else
+        error("ADCME: $type not defined")
+    end
+    @info "Loaded: $type"
 end
