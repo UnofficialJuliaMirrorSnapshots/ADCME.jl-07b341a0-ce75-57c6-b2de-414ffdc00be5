@@ -1,7 +1,3 @@
-push!(LOAD_PATH, "@stdlib")
-using Pkg
-Pkg.add("NLopt"); Pkg.add("Optim")
-
 using NLopt
 using Optim
 using ADCME
@@ -24,4 +20,5 @@ include("ops.jl")
 include("core.jl")
 include("extra.jl")
 include("RBF.jl")
+include("newton.jl")
 include("optim.jl")
